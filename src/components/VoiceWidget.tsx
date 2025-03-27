@@ -18,16 +18,18 @@ const VoiceWidget: React.FC<WidgetProps> = ({
   position = 'bottom-right',
   buttonLabel = 'Voice Assistant',
   greetingMessage = 'Hello! How can I assist you today?',
-  theme = 'system'
+  theme = 'system',
+  mode = 'standard',
+  initialMessages = []
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [transcript, setTranscript] = useState<TranscriptResult | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   
-  const { sendToN8n, isProcessing } = useN8nWebhook({ webhookUrl, apiKey });
+  const { sendToN8n, isProcessing } = useN8nWebhook({ webhookUrl, apiKey, mode });
   const { generateSpeech, stopSpeech, isLoading: isSpeaking } = useTTS({ apiKey });
   
   // Set theme

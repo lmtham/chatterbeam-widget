@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Mic, Settings, Info } from 'lucide-react';
 
-import { Message, TranscriptResult } from '@/types';
+import { Message, TranscriptResult, N8nWebhookConfig } from '@/types';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import ChatBox from '@/components/ChatBox';
 import TranscriptDisplay from '@/components/TranscriptDisplay';
@@ -14,19 +14,33 @@ import { toast } from 'sonner';
 
 const Index = () => {
   const [webhookUrl, setWebhookUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [webhookMode, setWebhookMode] = useState<'standard' | 'popup'>('standard');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptResult | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   
-  const { sendToN8n, isProcessing } = useN8nWebhook({ webhookUrl });
+  const { sendToN8n, isProcessing } = useN8nWebhook({ 
+    webhookUrl, 
+    apiKey,
+    mode: webhookMode
+  });
   const { generateSpeech, isLoading: isSpeaking } = useTTS();
   
   useEffect(() => {
-    // Check if webhook URL is already saved in localStorage
-    const savedWebhookUrl = localStorage.getItem('n8nWebhookUrl');
-    if (savedWebhookUrl) {
-      setWebhookUrl(savedWebhookUrl);
+    // Check if webhook config is already saved in localStorage
+    const savedWebhookConfig = localStorage.getItem('n8nWebhookConfig');
+    if (savedWebhookConfig) {
+      try {
+        const config: N8nWebhookConfig = JSON.parse(savedWebhookConfig);
+        setWebhookUrl(config.webhookUrl || '');
+        setApiKey(config.apiKey || '');
+        setWebhookMode(config.mode || 'standard');
+      } catch (error) {
+        console.error('Error parsing saved webhook config:', error);
+        setIsConfiguring(true);
+      }
     } else {
       // If no webhook URL is saved, show the configuration
       setIsConfiguring(true);
@@ -42,9 +56,15 @@ const Index = () => {
     }
     
     // Save to localStorage
-    localStorage.setItem('n8nWebhookUrl', webhookUrl);
+    const webhookConfig: N8nWebhookConfig = {
+      webhookUrl,
+      apiKey,
+      mode: webhookMode
+    };
+    
+    localStorage.setItem('n8nWebhookConfig', JSON.stringify(webhookConfig));
     setIsConfiguring(false);
-    toast.success('Webhook URL saved successfully');
+    toast.success('Webhook configuration saved successfully');
     
     // Add welcome message
     const welcomeMessage: Message = {
@@ -138,6 +158,41 @@ const Index = () => {
               />
               <p className="mt-1 text-xs text-muted-foreground">
                 Enter the webhook URL from your n8n workflow
+              </p>
+            </div>
+            
+            <div className="mb-4">
+              <label htmlFor="apiKey" className="block text-sm font-medium mb-1">
+                API Key (Optional)
+              </label>
+              <input
+                id="apiKey"
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                className="w-full p-2 rounded-md border border-input bg-background"
+                placeholder="Your API key for authentication"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                If your n8n webhook requires authentication
+              </p>
+            </div>
+            
+            <div className="mb-4">
+              <label htmlFor="webhookMode" className="block text-sm font-medium mb-1">
+                Webhook Mode
+              </label>
+              <select
+                id="webhookMode"
+                value={webhookMode}
+                onChange={(e) => setWebhookMode(e.target.value as 'standard' | 'popup')}
+                className="w-full p-2 rounded-md border border-input bg-background"
+              >
+                <option value="standard">Standard</option>
+                <option value="popup">Popup</option>
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Choose how the webhook should be displayed
               </p>
             </div>
             

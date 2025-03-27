@@ -18,6 +18,10 @@ export interface VoiceSettings {
 export interface N8nWebhookConfig {
   webhookUrl: string;
   apiKey?: string;
+  mode?: 'standard' | 'popup';
+  initialMessages?: Message[];
+  showWelcomeScreen?: boolean;
+  theme?: 'light' | 'dark' | 'system';
 }
 
 export interface TranscriptWord {
@@ -53,6 +57,9 @@ export interface WidgetProps {
   buttonLabel?: string;
   greetingMessage?: string;
   theme?: 'light' | 'dark' | 'system';
+  mode?: 'standard' | 'popup';
+  initialMessages?: Message[];
+  showWelcomeScreen?: boolean;
 }
 
 export interface VoiceRecorderProps {
