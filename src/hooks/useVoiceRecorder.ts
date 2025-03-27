@@ -17,26 +17,12 @@ const useVoiceRecorder = ({ onTranscriptReceived }: UseVoiceRecorderProps) => {
   const audioDataRef = useRef<Uint8Array | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const recognitionRef = useRef<any>(null);
   
-  // Mock STT for development (would connect to Deepgram/Whisper in production)
-  const simulateSTT = useCallback((audioChunk: Blob) => {
-    // In a real implementation, this would send audio to an STT service
-    // This simulates receiving a transcript after a short delay
-    const randomWords = [
-      "Hello", "How are you?", "What can I help you with today?",
-      "I'd like more information", "Tell me about your services",
-      "Can you explain that?", "I need assistance with", "Thank you"
-    ];
-    
-    const randomText = randomWords[Math.floor(Math.random() * randomWords.length)];
-    
-    setTimeout(() => {
-      onTranscriptReceived({
-        text: randomText,
-        isFinal: true
-      });
-    }, 500);
-  }, [onTranscriptReceived]);
+  // Check if the browser supports SpeechRecognition
+  const useSpeechRecognition = useCallback(() => {
+    return 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+  }, []);
   
   const startRecording = useCallback(async () => {
     try {
@@ -59,18 +45,93 @@ const useVoiceRecorder = ({ onTranscriptReceived }: UseVoiceRecorderProps) => {
       const source = audioContextRef.current.createMediaStreamSource(stream);
       source.connect(analyserRef.current);
       
-      // Set up media recorder
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          simulateSTT(event.data);
-        }
-      };
-      
-      mediaRecorder.start(1000);
-      setIsRecording(true);
+      // First try to use browser's SpeechRecognition API
+      if (useSpeechRecognition()) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognitionRef.current = new SpeechRecognition();
+        recognitionRef.current.continuous = true;
+        recognitionRef.current.interimResults = true;
+        recognitionRef.current.lang = 'en-US';
+        
+        let finalTranscript = '';
+        let interimTranscript = '';
+        
+        recognitionRef.current.onstart = () => {
+          console.log('Speech recognition started');
+          finalTranscript = '';
+          interimTranscript = '';
+        };
+        
+        recognitionRef.current.onresult = (event: any) => {
+          interimTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript = transcript;
+              // Send final transcript
+              onTranscriptReceived({
+                text: finalTranscript,
+                isFinal: true
+              });
+              finalTranscript = '';
+            } else {
+              interimTranscript = transcript;
+              // Send interim results
+              onTranscriptReceived({
+                text: interimTranscript,
+                isFinal: false
+              });
+            }
+          }
+        };
+        
+        recognitionRef.current.onerror = (event: any) => {
+          console.error('Speech recognition error:', event.error);
+          setError(`Speech recognition error: ${event.error}`);
+        };
+        
+        recognitionRef.current.onend = () => {
+          console.log('Speech recognition ended');
+          // Don't auto-restart as it can cause issues
+        };
+        
+        recognitionRef.current.start();
+        setIsRecording(true);
+      } else {
+        // Fallback to MediaRecorder if SpeechRecognition is not available
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        
+        const audioChunks: BlobPart[] = [];
+        
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunks.push(event.data);
+          }
+        };
+        
+        mediaRecorder.onstop = async () => {
+          // In a real app, you would send this audio to a speech-to-text service
+          // For now, just simulate a transcript
+          const randomPhrases = [
+            "Hello, how can I help you today?",
+            "I'd like more information please.",
+            "Can you tell me more about this service?",
+            "What are the next steps?",
+            "Thank you for your assistance."
+          ];
+          
+          const transcription = randomPhrases[Math.floor(Math.random() * randomPhrases.length)];
+          
+          onTranscriptReceived({
+            text: transcription,
+            isFinal: true
+          });
+        };
+        
+        mediaRecorder.start(1000);
+        setIsRecording(true);
+      }
       
       // Start visualization
       const updateAudioLevel = () => {
@@ -91,18 +152,32 @@ const useVoiceRecorder = ({ onTranscriptReceived }: UseVoiceRecorderProps) => {
       setError('Microphone access denied or not available');
       setIsRecording(false);
     }
-  }, [isRecording, simulateSTT]);
+  }, [isRecording, onTranscriptReceived, useSpeechRecognition]);
   
   const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+    // Stop SpeechRecognition if it's being used
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        console.error('Error stopping speech recognition:', e);
+      }
+      recognitionRef.current = null;
     }
     
+    // Stop MediaRecorder if it's being used
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+    }
+    
+    // Stop the audio stream
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
     
+    // Cancel the animation frame
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;

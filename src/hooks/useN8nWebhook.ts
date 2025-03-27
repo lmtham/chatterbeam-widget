@@ -1,7 +1,7 @@
 
 import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Message, N8nWebhookConfig } from '@/types';
+import { Message } from '@/types';
 
 interface UseN8nWebhookProps {
   webhookUrl: string;
@@ -24,27 +24,26 @@ const useN8nWebhook = ({ webhookUrl, apiKey, mode = 'standard' }: UseN8nWebhookP
     setIsProcessing(true);
     
     try {
-      // Format conversation history for the webhook
-      const formattedHistory = conversationHistory.map(msg => ({
-        role: msg.sender === 'user' ? 'user' : 'assistant',
-        content: msg.text
-      }));
+      // Create a session ID if it doesn't exist in localStorage
+      let sessionId = localStorage.getItem('n8n_session_id');
+      if (!sessionId) {
+        sessionId = 'session_' + Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('n8n_session_id', sessionId);
+      }
       
-      // Add the current message
-      formattedHistory.push({
-        role: 'user',
-        content: transcript
-      });
-      
-      // Create a payload that matches the expected format for n8n
+      // Format the payload to match the expected format
       const payload = {
-        transcript,
-        conversationHistory: formattedHistory,
+        action: 'sendMessage',
+        sessionId: sessionId,
+        chatInput: transcript,
+        message: transcript,
+        type: 'text',
         timestamp: new Date().toISOString(),
-        webhookConfig: {
-          mode,
-          apiKey
-        }
+        conversationHistory: conversationHistory.map(msg => ({
+          content: msg.text,
+          isUser: msg.sender === 'user',
+          timestamp: new Date(msg.timestamp).toISOString()
+        }))
       };
       
       // Add API key to headers if provided
@@ -71,10 +70,40 @@ const useN8nWebhook = ({ webhookUrl, apiKey, mode = 'standard' }: UseN8nWebhookP
         throw new Error(`Error from n8n: ${response.status}`);
       }
       
-      const responseData = await response.json();
-      console.log('Response from n8n:', responseData);
+      // Try to parse the response as JSON, but fall back to text if it's not valid JSON
+      let data;
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          data = text;
+        }
+      }
       
-      return responseData.response || responseData;
+      console.log('Response from n8n:', data);
+      
+      // Extract the response text based on the data format
+      let botResponseText = '';
+      
+      if (typeof data === 'string') {
+        botResponseText = data;
+      } else if (data.output) { // n8n AI format
+        botResponseText = data.output;
+      } else if (data.message) {
+        botResponseText = data.message;
+      } else if (data.response) {
+        botResponseText = data.response;
+      } else if (data.content) {
+        botResponseText = data.content;
+      } else if (data.text) {
+        botResponseText = data.text;
+      }
+      
+      return botResponseText || 'I received your message but I\'m not sure how to respond.';
     } catch (error) {
       console.error('Error sending to n8n:', error);
       toast.error('Failed to process with n8n. Check console for details.');

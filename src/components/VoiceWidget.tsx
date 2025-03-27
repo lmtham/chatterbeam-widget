@@ -28,9 +28,15 @@ const VoiceWidget: React.FC<WidgetProps> = ({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [transcript, setTranscript] = useState<TranscriptResult | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const isSpeakingRef = useRef<boolean>(false);
   
   const { sendToN8n, isProcessing } = useN8nWebhook({ webhookUrl, apiKey, mode });
   const { generateSpeech, stopSpeech, isLoading: isSpeaking } = useTTS({ apiKey });
+  
+  // Update the ref when isSpeaking changes
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
   
   // Set theme
   useEffect(() => {
@@ -60,7 +66,11 @@ const VoiceWidget: React.FC<WidgetProps> = ({
       };
       
       setMessages([message]);
-      generateSpeech(greetingMessage);
+      
+      // Only generate speech if it's not already speaking
+      if (!isSpeakingRef.current) {
+        generateSpeech(greetingMessage);
+      }
     }
   }, [isOpen, messages.length, greetingMessage, generateSpeech]);
   
@@ -98,6 +108,11 @@ const VoiceWidget: React.FC<WidgetProps> = ({
     setTranscript(result);
     
     if (result.isFinal && result.text.trim()) {
+      // Stop any ongoing speech
+      if (isSpeakingRef.current) {
+        stopSpeech();
+      }
+      
       // Add user message
       const userMessage: Message = {
         id: uuidv4(),
@@ -119,21 +134,29 @@ const VoiceWidget: React.FC<WidgetProps> = ({
       
       setMessages(prev => [...prev, pendingAiMessage]);
       
-      // Process with n8n webhook
-      const response = await sendToN8n(result.text, messages);
-      
-      // Update with actual AI response
-      if (response) {
-        setMessages(prev => prev.map(msg => 
-          msg.id === pendingAiMessage.id
-          ? { ...msg, text: response, pending: false }
-          : msg
-        ));
+      try {
+        // Process with n8n webhook
+        const response = await sendToN8n(result.text, messages);
         
-        // Generate speech for AI response
-        generateSpeech(response);
-      } else {
-        // Handle error
+        // Update with actual AI response if we got one
+        if (response) {
+          setMessages(prev => prev.map(msg => 
+            msg.id === pendingAiMessage.id
+            ? { ...msg, text: response, pending: false }
+            : msg
+          ));
+          
+          // Only generate speech if it's not already speaking
+          if (!isSpeakingRef.current) {
+            generateSpeech(response);
+          }
+        } else {
+          throw new Error('No response from n8n');
+        }
+      } catch (error) {
+        console.error('Error processing with n8n:', error);
+        
+        // Update with error message
         setMessages(prev => prev.map(msg => 
           msg.id === pendingAiMessage.id
           ? { ...msg, text: "Sorry, I couldn't process that request.", pending: false }
@@ -204,6 +227,14 @@ const VoiceWidget: React.FC<WidgetProps> = ({
                   isListening={isListening}
                   setIsListening={setIsListening}
                 />
+                
+                {/* Status indicator */}
+                <div className="mt-2 text-center text-xs text-muted-foreground">
+                  {isProcessing && "Processing..."}
+                  {isSpeaking && "Speaking..."}
+                  {!isProcessing && !isSpeaking && isListening && "Listening..."}
+                  {!isProcessing && !isSpeaking && !isListening && "Click the microphone to speak"}
+                </div>
               </div>
             </>
           )}
