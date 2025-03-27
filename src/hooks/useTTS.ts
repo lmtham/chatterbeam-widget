@@ -1,5 +1,5 @@
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { VoiceSettings } from '@/types';
 
 // This is a placeholder for actual TTS integration (ElevenLabs, PlayHT, etc.)
@@ -23,6 +23,8 @@ const useTTS = ({ apiKey, voiceSettings = {} }: UseTTSProps = {}) => {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  
   const settings: VoiceSettings = {
     ...DEFAULT_VOICE_SETTINGS,
     ...voiceSettings,
@@ -34,21 +36,27 @@ const useTTS = ({ apiKey, voiceSettings = {} }: UseTTSProps = {}) => {
       return null;
     }
     
+    // First, stop any ongoing speech
+    stopSpeech();
+    
     setIsLoading(true);
     setError(null);
     
     try {
       // In a real implementation, this would call the TTS API
       // For this example, we'll use the browser's built-in speech synthesis
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = settings.speechRate;
+      utteranceRef.current = new SpeechSynthesisUtterance(text);
+      utteranceRef.current.rate = settings.speechRate;
       
       // Create a promise that resolves when the utterance finishes
       const speechPromise = new Promise<void>((resolve) => {
-        utterance.onend = () => resolve();
+        if (utteranceRef.current) {
+          utteranceRef.current.onend = () => resolve();
+          utteranceRef.current.onerror = () => resolve();
+        }
       });
       
-      window.speechSynthesis.speak(utterance);
+      window.speechSynthesis.speak(utteranceRef.current);
       await speechPromise;
       
       return "speech-synthesis-url";
@@ -62,8 +70,13 @@ const useTTS = ({ apiKey, voiceSettings = {} }: UseTTSProps = {}) => {
   }, [settings]);
   
   const stopSpeech = useCallback(() => {
+    // Clear any existing speech synthesis
     window.speechSynthesis.cancel();
+    
+    // Clear current utterance
+    utteranceRef.current = null;
     setAudioUrl(null);
+    setIsLoading(false);
   }, []);
   
   return {

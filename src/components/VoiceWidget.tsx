@@ -28,15 +28,16 @@ const VoiceWidget: React.FC<WidgetProps> = ({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [transcript, setTranscript] = useState<TranscriptResult | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const isSpeakingRef = useRef<boolean>(false);
+  const isProcessingRef = useRef<boolean>(false);
+  const isUserInterruptingRef = useRef<boolean>(false);
   
   const { sendToN8n, isProcessing } = useN8nWebhook({ webhookUrl, apiKey, mode });
   const { generateSpeech, stopSpeech, isLoading: isSpeaking } = useTTS({ apiKey });
   
-  // Update the ref when isSpeaking changes
+  // Update the ref when processing status changes
   useEffect(() => {
-    isSpeakingRef.current = isSpeaking;
-  }, [isSpeaking]);
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
   
   // Set theme
   useEffect(() => {
@@ -68,11 +69,11 @@ const VoiceWidget: React.FC<WidgetProps> = ({
       setMessages([message]);
       
       // Only generate speech if it's not already speaking
-      if (!isSpeakingRef.current) {
+      if (!isSpeaking) {
         generateSpeech(greetingMessage);
       }
     }
-  }, [isOpen, messages.length, greetingMessage, generateSpeech]);
+  }, [isOpen, messages.length, greetingMessage, generateSpeech, isSpeaking]);
   
   // Create container element for portal rendering
   useEffect(() => {
@@ -107,11 +108,27 @@ const VoiceWidget: React.FC<WidgetProps> = ({
   const handleTranscriptReceived = async (result: TranscriptResult) => {
     setTranscript(result);
     
+    // If user starts speaking while AI is speaking, interrupt the AI
+    if (isSpeaking && !isUserInterruptingRef.current && result.text.trim()) {
+      console.log("User interrupting AI speech");
+      isUserInterruptingRef.current = true;
+      stopSpeech(); // Stop AI speech to let user speak
+      
+      // Add a small delay before processing the transcript
+      setTimeout(() => {
+        isUserInterruptingRef.current = false;
+      }, 500);
+    }
+    
     if (result.isFinal && result.text.trim()) {
-      // Stop any ongoing speech
-      if (isSpeakingRef.current) {
-        stopSpeech();
+      // Check if we're currently processing another message
+      if (isProcessingRef.current && !isUserInterruptingRef.current) {
+        console.log("Still processing previous message, ignoring new message");
+        return;
       }
+      
+      // Stop any ongoing speech
+      stopSpeech();
       
       // Add user message
       const userMessage: Message = {
@@ -146,8 +163,8 @@ const VoiceWidget: React.FC<WidgetProps> = ({
             : msg
           ));
           
-          // Only generate speech if it's not already speaking
-          if (!isSpeakingRef.current) {
+          // Only generate speech if it's not already speaking and if the user didn't interrupt
+          if (!isUserInterruptingRef.current) {
             generateSpeech(response);
           }
         } else {
@@ -231,7 +248,7 @@ const VoiceWidget: React.FC<WidgetProps> = ({
                 {/* Status indicator */}
                 <div className="mt-2 text-center text-xs text-muted-foreground">
                   {isProcessing && "Processing..."}
-                  {isSpeaking && "Speaking..."}
+                  {isSpeaking && "Speaking... (speak to interrupt)"}
                   {!isProcessing && !isSpeaking && isListening && "Listening..."}
                   {!isProcessing && !isSpeaking && !isListening && "Click the microphone to speak"}
                 </div>

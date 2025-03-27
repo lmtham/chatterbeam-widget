@@ -2,6 +2,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { TranscriptResult } from '@/types';
 
+// Add TypeScript declarations for SpeechRecognition
+declare global {
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
+  }
+}
+
 interface UseVoiceRecorderProps {
   onTranscriptReceived: (transcript: TranscriptResult) => void;
 }
@@ -48,6 +56,17 @@ const useVoiceRecorder = ({ onTranscriptReceived }: UseVoiceRecorderProps) => {
       // First try to use browser's SpeechRecognition API
       if (useSpeechRecognition()) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        
+        // If we already have a recognition instance, stop it
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.abort();
+            recognitionRef.current = null;
+          } catch (e) {
+            console.error('Error stopping existing speech recognition:', e);
+          }
+        }
+        
         recognitionRef.current = new SpeechRecognition();
         recognitionRef.current.continuous = true;
         recognitionRef.current.interimResults = true;
@@ -93,6 +112,15 @@ const useVoiceRecorder = ({ onTranscriptReceived }: UseVoiceRecorderProps) => {
         recognitionRef.current.onend = () => {
           console.log('Speech recognition ended');
           // Don't auto-restart as it can cause issues
+          // If it's still supposed to be recording, manually restart
+          if (isRecording) {
+            try {
+              recognitionRef.current.start();
+            } catch (e) {
+              console.error('Error restarting speech recognition:', e);
+              setError('Failed to restart speech recognition');
+            }
+          }
         };
         
         recognitionRef.current.start();
