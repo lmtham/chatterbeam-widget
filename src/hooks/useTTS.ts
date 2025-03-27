@@ -30,7 +30,7 @@ const useTTS = ({ apiKey, voiceSettings = {} }: UseTTSProps = {}) => {
     ...voiceSettings,
   };
   
-  // Placeholder for speech synthesis (for demo purposes)
+  // Improved speech synthesis with better stop handling
   const generateSpeech = useCallback(async (text: string): Promise<string | null> => {
     if (!text || text.trim() === '') {
       return null;
@@ -69,9 +69,13 @@ const useTTS = ({ apiKey, voiceSettings = {} }: UseTTSProps = {}) => {
     }
   }, [settings]);
   
+  // Improved stopSpeech function with immediate effect
   const stopSpeech = useCallback(() => {
-    // Clear any existing speech synthesis
-    window.speechSynthesis.cancel();
+    // Immediately cancel any existing speech synthesis
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      console.log("Speech synthesis stopped");
+    }
     
     // Clear current utterance
     utteranceRef.current = null;
