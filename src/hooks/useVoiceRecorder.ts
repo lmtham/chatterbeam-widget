@@ -19,6 +19,10 @@ const useVoiceRecorder = ({ onTranscriptReceived }: UseVoiceRecorderProps) => {
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
   
+  // Add a counter to track recognition cycles
+  const recognitionCyclesRef = useRef<number>(0);
+  const MAX_RECOGNITION_CYCLES = 4; // Force a complete reset after this many cycles
+  
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -34,7 +38,7 @@ const useVoiceRecorder = ({ onTranscriptReceived }: UseVoiceRecorderProps) => {
   }, []);
   
   // Function to completely reset all resources
-  const resetResources = useCallback(() => {
+  const resetResources = useCallback((forceFullReset = false) => {
     // Cancel animation frame
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -99,7 +103,12 @@ const useVoiceRecorder = ({ onTranscriptReceived }: UseVoiceRecorderProps) => {
       setError(null);
       
       // First, ensure we've cleaned up any existing resources
-      resetResources();
+      // If this is a fresh start (not a restart), reset the cycle counter
+      if (recognitionCyclesRef.current === 0) {
+        resetResources(true);
+      } else {
+        resetResources(false);
+      }
       
       // Request microphone access
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -145,7 +154,21 @@ const useVoiceRecorder = ({ onTranscriptReceived }: UseVoiceRecorderProps) => {
                 text: finalTranscript,
                 isFinal: true
               });
-              finalTranscript = '';
+              
+              // Reset transcript but keep recognition active
+              // Don't reset finalTranscript here to avoid losing context
+              
+              // Ensure recognition continues after processing final transcript
+              // This is crucial for continuous voice capture
+              if (recognitionRef.current) {
+                try {
+                  // We don't need to restart here as the recognition is continuous
+                  // Just log that we're continuing to listen
+                  console.log('Continuing to listen after final transcript');
+                } catch (e) {
+                  console.error('Error continuing recognition after final transcript:', e);
+                }
+              }
             } else {
               interimTranscript = transcript;
               // Send interim results
@@ -188,18 +211,43 @@ const useVoiceRecorder = ({ onTranscriptReceived }: UseVoiceRecorderProps) => {
           // If it's still supposed to be recording, restart it
           if (isRecording) {
             try {
+              // Increment the recognition cycles counter
+              recognitionCyclesRef.current += 1;
+              console.log(`Recognition cycle: ${recognitionCyclesRef.current}`);
+              
+              // Force recreation of the recognition instance to ensure a fresh state
               if (recognitionRef.current) {
-                recognitionRef.current.start();
-                console.log('Recognition restarted after ending');
-              } else {
-                // If for some reason the recognition instance was destroyed, recreate it
-                startRecording();
+                try {
+                  recognitionRef.current.abort();
+                } catch (abortError) {
+                  console.error('Error aborting recognition:', abortError);
+                }
+                recognitionRef.current = null;
               }
+              
+              // Small delay before restarting to allow resources to be properly released
+              if (recognitionRestartTimeoutRef.current) {
+                clearTimeout(recognitionRestartTimeoutRef.current);
+              }
+              
+              // Check if we need to do a full reset of all resources
+              const needsFullReset = recognitionCyclesRef.current >= MAX_RECOGNITION_CYCLES;
+              
+              recognitionRestartTimeoutRef.current = setTimeout(() => {
+                console.log('Recreating recognition instance after end event');
+                if (needsFullReset) {
+                  console.log('Performing full resource reset after multiple cycles');
+                  recognitionCyclesRef.current = 0;
+                  // Completely reset all resources before starting again
+                  resetResources(true);
+                }
+                startRecording();  
+              }, needsFullReset ? 500 : 300); // Longer delay for full reset
             } catch (e) {
               console.error('Error restarting speech recognition:', e);
               setError('Failed to restart speech recognition');
               
-              // Try again after a delay
+              // Try again after a longer delay
               if (recognitionRestartTimeoutRef.current) {
                 clearTimeout(recognitionRestartTimeoutRef.current);
               }
