@@ -4,9 +4,9 @@ import { SpeechRecognitionInstance, SpeechRecognitionOptions } from '@/types/spe
 
 export const createSpeechRecognition = (): SpeechRecognitionInstance | null => {
   if ('SpeechRecognition' in window) {
-    return new window.SpeechRecognition();
+    return new (window as any).SpeechRecognition();
   } else if ('webkitSpeechRecognition' in window) {
-    return new window.webkitSpeechRecognition();
+    return new (window as any).webkitSpeechRecognition();
   }
   
   return null;
