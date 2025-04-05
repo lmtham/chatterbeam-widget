@@ -1,18 +1,12 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { createPortal } from 'react-dom';
-import { Mic, X, MinusCircle, Maximize2, UserCircle } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
-
-import { WidgetProps, Message, TranscriptResult } from '@/types';
-import VoiceRecorder from './VoiceRecorder';
-import ChatBox from './ChatBox';
-import TranscriptDisplay from './TranscriptDisplay';
-import Avatar from './Avatar';
-import useN8nWebhook from '@/hooks/useN8nWebhook';
-import useTTS from '@/hooks/useTTS';
 import { cn } from '@/lib/utils';
-import avatarService from '@/services/AvatarService';
+import { WidgetProps } from '@/types';
+import useWidgetLogic from '@/hooks/useWidgetLogic';
+import WidgetHeader from './widget/WidgetHeader';
+import WidgetContent from './widget/WidgetContent';
+import WidgetToggleButton from './widget/WidgetToggleButton';
 
 const VoiceWidget: React.FC<WidgetProps> = ({
   webhookUrl,
@@ -26,28 +20,35 @@ const VoiceWidget: React.FC<WidgetProps> = ({
   ttsProvider = 'deepgram',
   showAvatar = false
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [showingAvatar, setShowingAvatar] = useState(showAvatar);
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
-  const [transcript, setTranscript] = useState<TranscriptResult | null>(null);
-  const [currentAIText, setCurrentAIText] = useState<string>('');
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const isProcessingRef = useRef<boolean>(false);
-  const isUserInterruptingRef = useRef<boolean>(false);
-  const lastUserSpeakTimeRef = useRef<number>(0);
-  
-  const { sendToN8n, isProcessing } = useN8nWebhook({ webhookUrl, apiKey, mode });
-  const { generateSpeech, stopSpeech, isLoading: isSpeaking } = useTTS({ apiKey, ttsProvider });
-  
-  // Update the ref when processing status changes
-  useEffect(() => {
-    isProcessingRef.current = isProcessing;
-  }, [isProcessing]);
+  const {
+    isOpen,
+    isListening,
+    isMinimized,
+    showingAvatar,
+    messages,
+    transcript,
+    currentAIText,
+    isProcessing,
+    isSpeaking,
+    containerRef,
+    handleToggleWidget,
+    handleMinimize,
+    handleToggleAvatar,
+    handleTranscriptReceived,
+    handleAvatarVideoEnd,
+    setIsListening
+  } = useWidgetLogic({
+    webhookUrl,
+    apiKey,
+    mode,
+    greetingMessage,
+    ttsProvider,
+    initialMessages,
+    showAvatar
+  });
   
   // Set theme
-  useEffect(() => {
+  React.useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else if (theme === 'light') {
@@ -62,158 +63,6 @@ const VoiceWidget: React.FC<WidgetProps> = ({
       }
     }
   }, [theme]);
-  
-  // Add greeting message when widget is first opened
-  useEffect(() => {
-    if (isOpen && messages.length === 0 && greetingMessage) {
-      const message: Message = {
-        id: uuidv4(),
-        text: greetingMessage,
-        sender: 'ai',
-        timestamp: Date.now()
-      };
-      
-      setMessages([message]);
-      setCurrentAIText(greetingMessage);
-      
-      // Only generate speech if it's not already speaking
-      if (!isSpeaking) {
-        generateSpeech(greetingMessage);
-      }
-    }
-  }, [isOpen, messages.length, greetingMessage, generateSpeech, isSpeaking]);
-  
-  // Create container element for portal rendering
-  useEffect(() => {
-    const container = document.createElement('div');
-    container.id = 'voice-widget-container';
-    document.body.appendChild(container);
-    containerRef.current = container;
-    
-    return () => {
-      if (container && document.body.contains(container)) {
-        document.body.removeChild(container);
-      }
-    };
-  }, []);
-  
-  const handleToggleWidget = () => {
-    if (isOpen) {
-      // Stop any ongoing operations when closing
-      if (isListening) setIsListening(false);
-      if (isSpeaking) stopSpeech();
-      setTimeout(() => setIsOpen(false), 300);
-    } else {
-      setIsOpen(true);
-      setIsMinimized(false);
-    }
-  };
-  
-  const handleMinimize = () => {
-    setIsMinimized(!isMinimized);
-  };
-
-  const handleToggleAvatar = () => {
-    setShowingAvatar(!showingAvatar);
-  };
-  
-  const handleTranscriptReceived = async (result: TranscriptResult) => {
-    // Update last time user spoke for debouncing purposes
-    lastUserSpeakTimeRef.current = Date.now();
-    
-    setTranscript(result);
-    
-    // If user starts speaking while AI is speaking, immediately interrupt the AI
-    if (isSpeaking && result.text.trim()) {
-      console.log("User interrupting AI speech");
-      stopSpeech(); // Immediately stop AI speech to let user speak
-      isUserInterruptingRef.current = true;
-      setCurrentAIText(''); // Reset current AI text to stop avatar
-      
-      // Add a small delay before resetting the interruption state
-      setTimeout(() => {
-        isUserInterruptingRef.current = false;
-      }, 300);
-    }
-    
-    if (result.isFinal && result.text.trim()) {
-      // We'll process the message regardless of previous processing state when the user interrupts
-      const shouldProcessMessage = !isProcessingRef.current || isUserInterruptingRef.current;
-      
-      if (!shouldProcessMessage) {
-        console.log("Still processing previous message, ignoring new message");
-        return;
-      }
-      
-      // Stop any ongoing speech immediately
-      stopSpeech();
-      setCurrentAIText(''); // Reset current AI text to stop avatar
-      
-      // Add user message
-      const userMessage: Message = {
-        id: uuidv4(),
-        text: result.text,
-        sender: 'user',
-        timestamp: Date.now()
-      };
-      
-      setMessages(prev => [...prev, userMessage]);
-      
-      // Add pending AI message
-      const pendingAiMessage: Message = {
-        id: uuidv4(),
-        text: 'Thinking...',
-        sender: 'ai',
-        timestamp: Date.now(),
-        pending: true
-      };
-      
-      setMessages(prev => [...prev, pendingAiMessage]);
-      
-      try {
-        // Process with n8n webhook
-        const response = await sendToN8n(result.text, messages);
-        
-        // Update with actual AI response if we got one
-        if (response) {
-          setMessages(prev => prev.map(msg => 
-            msg.id === pendingAiMessage.id
-            ? { ...msg, text: response, pending: false }
-            : msg
-          ));
-          
-          // Set current AI text for avatar
-          setCurrentAIText(response);
-          
-          // Only generate speech if user hasn't interrupted in the meantime
-          const timeSinceLastUserSpeak = Date.now() - lastUserSpeakTimeRef.current;
-          if (timeSinceLastUserSpeak > 500 && !isUserInterruptingRef.current) {
-            generateSpeech(response);
-          } else {
-            console.log("User spoke recently, not generating speech");
-          }
-        } else {
-          throw new Error('No response from n8n');
-        }
-      } catch (error) {
-        console.error('Error processing with n8n:', error);
-        
-        // Update with error message
-        setMessages(prev => prev.map(msg => 
-          msg.id === pendingAiMessage.id
-          ? { ...msg, text: "Sorry, I couldn't process that request.", pending: false }
-          : msg
-        ));
-        
-        setCurrentAIText("Sorry, I couldn't process that request.");
-      }
-    }
-  };
-  
-  // Handle avatar video end event
-  const handleAvatarVideoEnd = () => {
-    setCurrentAIText('');
-  };
   
   // Position classes based on the position prop
   const positionClasses = {
@@ -234,94 +83,34 @@ const VoiceWidget: React.FC<WidgetProps> = ({
             isMinimized && "h-14"
           )}
         >
-          {/* Widget Header */}
-          <div className="flex items-center justify-between p-4 border-b border-border">
-            <h3 className="font-medium">Voice Assistant</h3>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={handleToggleAvatar}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label={showingAvatar ? "Hide Avatar" : "Show Avatar"}
-                title={showingAvatar ? "Hide Avatar" : "Show Avatar"}
-              >
-                <UserCircle size={18} />
-              </button>
-              <button 
-                onClick={handleMinimize}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label={isMinimized ? "Expand" : "Minimize"}
-              >
-                <MinusCircle size={18} />
-              </button>
-              <button 
-                onClick={handleToggleWidget}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="Close"
-              >
-                <X size={18} />
-              </button>
-            </div>
-          </div>
+          <WidgetHeader
+            handleToggleWidget={handleToggleWidget}
+            handleMinimize={handleMinimize}
+            handleToggleAvatar={handleToggleAvatar}
+            showingAvatar={showingAvatar}
+          />
           
-          {/* Widget Content (hidden when minimized) */}
-          {!isMinimized && (
-            <>
-              {/* Avatar section - only show if enabled */}
-              {showingAvatar && (
-                <div className="p-4 border-b border-border">
-                  <Avatar 
-                    text={currentAIText} 
-                    isActive={Boolean(currentAIText)} 
-                    onVideoEnd={handleAvatarVideoEnd}
-                  />
-                </div>
-              )}
-            
-              <ChatBox 
-                messages={messages} 
-                className="h-80"
-              />
-              
-              <div className="p-4 border-t border-border">
-                <div className="relative mb-4">
-                  <TranscriptDisplay 
-                    transcript={transcript} 
-                    className="w-full"
-                  />
-                </div>
-                
-                <VoiceRecorder
-                  onTranscriptReceived={handleTranscriptReceived}
-                  isListening={isListening}
-                  setIsListening={setIsListening}
-                />
-                
-                {/* Status indicator */}
-                <div className="mt-2 text-center text-xs text-muted-foreground">
-                  {isProcessing && "Processing..."}
-                  {isSpeaking && "Speaking... (speak to interrupt)"}
-                  {!isProcessing && !isSpeaking && isListening && "Listening..."}
-                  {!isProcessing && !isSpeaking && !isListening && "Click the microphone to speak"}
-                </div>
-              </div>
-            </>
-          )}
+          <WidgetContent
+            isMinimized={isMinimized}
+            showingAvatar={showingAvatar}
+            messages={messages}
+            transcript={transcript}
+            isListening={isListening}
+            setIsListening={setIsListening}
+            handleTranscriptReceived={handleTranscriptReceived}
+            currentAIText={currentAIText}
+            handleAvatarVideoEnd={handleAvatarVideoEnd}
+            isProcessing={isProcessing}
+            isSpeaking={isSpeaking}
+          />
         </div>
       )}
       
-      {/* Widget Toggle Button */}
-      <button
-        onClick={handleToggleWidget}
-        className={cn(
-          "widget-button animate-breathe",
-          isOpen && "scale-90 opacity-0 pointer-events-none",
-          !isOpen && "scale-100 opacity-100"
-        )}
-        aria-label={buttonLabel}
-        title={buttonLabel}
-      >
-        <Mic size={24} />
-      </button>
+      <WidgetToggleButton
+        handleToggleWidget={handleToggleWidget}
+        isOpen={isOpen}
+        buttonLabel={buttonLabel}
+      />
     </div>,
     containerRef.current
   );
