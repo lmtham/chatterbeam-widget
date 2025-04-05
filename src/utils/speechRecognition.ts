@@ -1,7 +1,8 @@
 
 import { TranscriptResult } from '@/types';
+import { SpeechRecognitionInstance, SpeechRecognitionOptions } from '@/types/speechRecognition';
 
-export const createSpeechRecognition = (): any | null => {
+export const createSpeechRecognition = (): SpeechRecognitionInstance | null => {
   if ('SpeechRecognition' in window) {
     return new window.SpeechRecognition();
   } else if ('webkitSpeechRecognition' in window) {
@@ -16,7 +17,7 @@ export const isSpeechRecognitionSupported = (): boolean => {
 };
 
 export const setupSpeechRecognition = (
-  recognition: any,
+  recognition: SpeechRecognitionInstance | null,
   onTranscript: (transcript: TranscriptResult) => void,
   onError: (error: string) => void
 ): void => {
