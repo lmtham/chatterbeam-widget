@@ -65,39 +65,37 @@ const Avatar: React.FC<AvatarProps> = ({
 
   return (
     <div className={`avatar-container ${className}`}>
-      <AspectRatio ratio={16/9} className="bg-muted rounded-lg overflow-hidden">
-        {isLoading ? (
-          <div className="flex items-center justify-center w-full h-full">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <span className="ml-2 text-sm text-muted-foreground">Generating avatar...</span>
-          </div>
-        ) : error ? (
-          <div className="flex items-center justify-center w-full h-full flex-col">
-            <p className="text-sm text-destructive">{error}</p>
-            <img 
-              src={avatarService.getAvatarUrl()} 
-              alt="Static avatar" 
-              className="w-full h-full object-cover opacity-60"
-            />
-          </div>
-        ) : videoUrl ? (
-          <video 
-            ref={videoRef}
-            src={videoUrl} 
-            className="w-full h-full object-cover"
-            autoPlay 
-            playsInline
-            onEnded={handleVideoEnd}
-            controls={false}
-          />
-        ) : (
+      {isLoading ? (
+        <div className="flex items-center justify-center w-full h-full bg-black/20">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <span className="ml-2 text-sm text-white">Generating avatar...</span>
+        </div>
+      ) : error ? (
+        <div className="flex items-center justify-center w-full h-full flex-col bg-black/20">
+          <p className="text-sm text-destructive">{error}</p>
           <img 
             src={avatarService.getAvatarUrl()} 
-            alt="Avatar" 
-            className="w-full h-full object-cover"
+            alt="Static avatar" 
+            className="w-full h-full object-cover opacity-60"
           />
-        )}
-      </AspectRatio>
+        </div>
+      ) : videoUrl ? (
+        <video 
+          ref={videoRef}
+          src={videoUrl} 
+          className="w-full h-full object-cover"
+          autoPlay 
+          playsInline
+          onEnded={handleVideoEnd}
+          controls={false}
+        />
+      ) : (
+        <img 
+          src={avatarService.getAvatarUrl()} 
+          alt="Avatar" 
+          className="w-full h-full object-cover"
+        />
+      )}
     </div>
   );
 };
