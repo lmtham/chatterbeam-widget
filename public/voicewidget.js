@@ -1,6 +1,6 @@
 /**
  * Voice Widget - Embeddable Voice AI Assistant
- * Version 1.0.0
+ * Version 1.1.0
  */
 
 (function() {
@@ -238,6 +238,56 @@
     .voice-widget-visualizer-bar.active {
       animation: sound 0.5s infinite alternate;
     }
+
+    .voice-widget-avatar-container {
+      width: 100%;
+      position: relative;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 16px;
+      background-color: #f0f0f0;
+    }
+
+    .voice-widget-avatar-wrapper {
+      position: relative;
+      width: 100%;
+      padding-top: 56.25%; /* 16:9 aspect ratio */
+    }
+
+    .voice-widget-avatar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background-color: #f0f0f0;
+    }
+
+    .voice-widget-avatar-loading {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(0, 0, 0, 0.1);
+    }
+
+    .voice-widget-avatar-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(0, 0, 0, 0.1);
+      border-radius: 50%;
+      border-top-color: #8a2387;
+      animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
     
     @keyframes sound {
       0% {
@@ -259,6 +309,8 @@
         apiKey: '',
         ttsProvider: 'deepgram',
         deepgramApiKey: '6915c6d15184afacb050f65c9fa22bf35b193160', // Default Deepgram API key
+        showAvatar: false, // New option to show avatar
+        avatarUrl: 'https://cdn.pixabay.com/photo/2014/04/02/10/25/woman-303628_1280.png', // Default avatar
         ...config
       };
       
@@ -276,6 +328,9 @@
       this.visualizerBars = [];
       this.audioElement = null;
       this.currentAudioUrl = null;
+      this.currentAvatarText = '';
+      this.currentAvatarUrl = null;
+      this.isAvatarLoading = false;
       
       // Initialize the widget
       this.init();
@@ -306,6 +361,8 @@
       // Add greeting message
       if (this.config.greetingMessage) {
         this.addMessage(this.config.greetingMessage, 'ai');
+        this.currentAvatarText = this.config.greetingMessage;
+        this.generateAvatarVideo(this.config.greetingMessage);
       }
       
       // Initialize speech recognition if supported
@@ -328,11 +385,36 @@
       </svg>`;
     }
     
+    getUserIcon() {
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <circle cx="12" cy="9" r="3"></circle>
+        <path d="M12 12a5 5 0 0 0-5 5"></path>
+        <path d="M12 12a5 5 0 0 1 5 5"></path>
+      </svg>`;
+    }
+    
     renderPanel() {
+      let avatarSection = '';
+      if (this.config.showAvatar) {
+        avatarSection = `
+          <div class="voice-widget-avatar-container">
+            <div class="voice-widget-avatar-wrapper">
+              ${this.renderAvatar()}
+            </div>
+          </div>
+        `;
+      }
+      
       this.panel.innerHTML = `
         <div class="voice-widget-header">
           <h3 class="voice-widget-title">Voice Assistant</h3>
           <div class="voice-widget-controls">
+            ${this.config.showAvatar ? '' : 
+              `<button class="voice-widget-control-button" id="voice-widget-toggle-avatar" title="Toggle Avatar">
+                ${this.getUserIcon()}
+              </button>`
+            }
             <button class="voice-widget-reset-button" id="voice-widget-reset" title="Reset conversation">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
@@ -344,6 +426,8 @@
             </button>
           </div>
         </div>
+        
+        ${avatarSection}
         
         <div class="voice-widget-chat" id="voice-widget-chat">
           ${this.renderMessages()}
@@ -388,8 +472,32 @@
         });
       }
       
+      const toggleAvatarButton = this.panel.querySelector('#voice-widget-toggle-avatar');
+      if (toggleAvatarButton) {
+        toggleAvatarButton.addEventListener('click', () => {
+          this.config.showAvatar = !this.config.showAvatar;
+          this.renderPanel();
+        });
+      }
+      
       // Initialize visualizer bars
       this.visualizerBars = Array.from(this.panel.querySelectorAll('.voice-widget-visualizer-bar'));
+    }
+    
+    renderAvatar() {
+      if (this.isAvatarLoading) {
+        return `
+          <div class="voice-widget-avatar-loading">
+            <div class="voice-widget-avatar-spinner"></div>
+          </div>
+        `;
+      }
+      
+      if (this.currentAvatarUrl) {
+        return `<video class="voice-widget-avatar" id="voice-widget-avatar-video" src="${this.currentAvatarUrl}" autoplay playsInline></video>`;
+      }
+      
+      return `<img class="voice-widget-avatar" src="${this.config.avatarUrl || 'https://cdn.pixabay.com/photo/2014/04/02/10/25/woman-303628_1280.png'}" alt="AI Avatar" />`;
     }
     
     renderVisualizer() {
@@ -410,7 +518,7 @@
     
     getStatusText() {
       if (this.isProcessing) return 'Processing...';
-      if (this.isSpeaking) return 'Speaking...';
+      if (this.isSpeaking) return 'Speaking... (speak to interrupt)';
       if (this.isListening) return 'Listening...';
       return 'Click the microphone to speak';
     }
@@ -426,6 +534,8 @@
         if (this.isListening) {
           this.toggleListening();
         }
+        // Stop any playing avatar video
+        this.stopAvatarVideo();
       }
     }
     
@@ -444,6 +554,12 @@
       });
       
       if (this.isListening) {
+        // If AI is currently speaking, interrupt it
+        if (this.isSpeaking) {
+          this.stopSpeech();
+          this.stopAvatarVideo();
+        }
+        
         // Start recognition
         if (this.recognition) {
           try {
@@ -500,6 +616,13 @@
           transcriptElement.textContent = this.transcript;
         }
         
+        // If user is speaking while AI is speaking, interrupt AI
+        if (this.isSpeaking && this.transcript.trim()) {
+          console.log("User interrupting AI, stopping speech");
+          this.stopSpeech();
+          this.stopAvatarVideo();
+        }
+        
         // Process final transcript
         if (finalTranscript) {
           this.processUserInput(finalTranscript);
@@ -529,6 +652,10 @@
     processUserInput(text) {
       // Add user message
       this.addMessage(text, 'user');
+      
+      // Stop any ongoing speech/video
+      this.stopSpeech();
+      this.stopAvatarVideo();
       
       // Show processing state
       this.isProcessing = true;
@@ -578,7 +705,6 @@
         }
         
         console.log('Sending to n8n webhook:', this.config.webhookUrl);
-        console.log('Payload:', JSON.stringify(payload));
         
         fetch(this.config.webhookUrl, {
           method: 'POST',
@@ -637,6 +763,14 @@
               };
             }
             
+            // Set as current avatar text
+            this.currentAvatarText = responseText;
+            
+            // Generate avatar video if enabled
+            if (this.config.showAvatar) {
+              this.generateAvatarVideo(responseText);
+            }
+            
             // Generate speech if TTS is configured
             if (this.config.ttsProvider && responseText) {
               this.generateSpeech(responseText);
@@ -648,15 +782,17 @@
           .catch(error => {
             console.error('Error processing with webhook:', error);
             // Update with error message
+            const errorMessage = "I'm sorry, I couldn't process that request. Please try again.";
             const messageIndex = this.messages.findIndex(m => m === thinkingMessage);
             if (messageIndex !== -1) {
               this.messages[messageIndex] = { 
                 id: thinkingMessage.id, 
-                text: "I'm sorry, I couldn't process that request. Please try again.", 
+                text: errorMessage, 
                 sender: 'ai', 
                 timestamp: Date.now() 
               };
             }
+            this.currentAvatarText = errorMessage;
             this.renderPanel();
             this.scrollToBottom();
           })
@@ -683,6 +819,40 @@
       }
     }
     
+    generateAvatarVideo(text) {
+      if (!this.config.showAvatar || !text || text === 'Thinking...') return;
+      
+      this.isAvatarLoading = true;
+      this.renderPanel();
+      
+      // In a real implementation, this would call D-ID or HeyGen API
+      // For demo purposes, we'll use a placeholder video
+      setTimeout(() => {
+        this.isAvatarLoading = false;
+        
+        // Use a sample video that simulates an AI avatar
+        // In production, this would be a real API call to D-ID or HeyGen
+        const mockVideoUrl = 'https://storage.googleapis.com/heygen-public/demo-video/talking_4.mp4';
+        
+        this.currentAvatarUrl = mockVideoUrl;
+        this.renderPanel();
+        
+        // Add event listener to video for when it ends
+        const videoElement = this.panel.querySelector('#voice-widget-avatar-video');
+        if (videoElement) {
+          videoElement.onended = () => {
+            this.stopAvatarVideo();
+          };
+        }
+      }, 1500);
+    }
+    
+    stopAvatarVideo() {
+      this.currentAvatarUrl = null;
+      this.currentAvatarText = '';
+      this.renderPanel();
+    }
+    
     scrollToBottom() {
       // Scroll chat to bottom
       setTimeout(() => {
@@ -691,58 +861,6 @@
           chatContainer.scrollTop = chatContainer.scrollHeight;
         }
       }, 100);
-    }
-    
-    sendToWebhook(text) {
-      return new Promise((resolve, reject) => {
-        const headers = {
-          'Content-Type': 'application/json'
-        };
-        
-        if (this.config.apiKey) {
-          headers['Authorization'] = `Bearer ${this.config.apiKey}`;
-        }
-        
-        // Format messages in the same way as the main application
-        const formattedMessages = this.messages.map(m => ({
-          id: m.id,
-          text: m.text,
-          sender: m.sender,
-          timestamp: m.timestamp || Date.now()
-        }));
-        
-        fetch(this.config.webhookUrl, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            text,
-            messages: formattedMessages,
-            mode: 'standard',
-            ttsProvider: this.config.ttsProvider || 'deepgram'
-          })
-        })
-          .then(response => {
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-          })
-          .then(data => {
-            // Handle the response in the same way as the main application
-            const responseText = data.response || data.text || data.message || data;
-            
-            // Generate speech if TTS is configured
-            if (this.config.ttsProvider && responseText) {
-              this.generateSpeech(responseText);
-            }
-            
-            resolve(responseText);
-          })
-          .catch(error => {
-            console.error('Error sending to webhook:', error);
-            reject(error);
-          });
-      });
     }
     
     generateSpeech(text) {
@@ -957,15 +1075,55 @@
       // Clear messages
       this.messages = [];
       this.transcript = '';
+      this.stopSpeech();
+      this.stopAvatarVideo();
       
       // Generate a new session ID
       const newSessionId = 'session_' + Math.random().toString(36).substring(2, 15);
       localStorage.setItem('n8n_session_id', newSessionId);
       console.log('Chat session reset with new session ID:', newSessionId);
       
+      // Add welcome message
+      if (this.config.greetingMessage) {
+        this.addMessage(this.config.greetingMessage, 'ai');
+        this.currentAvatarText = this.config.greetingMessage;
+        
+        // Generate avatar video if enabled
+        if (this.config.showAvatar) {
+          this.generateAvatarVideo(this.config.greetingMessage);
+        }
+        
+        // Generate speech
+        if (this.config.ttsProvider) {
+          this.generateSpeech(this.config.greetingMessage);
+        }
+      }
+      
       // Update UI
       this.renderPanel();
       this.scrollToBottom();
+    }
+    
+    stopSpeech() {
+      if (this.audioElement) {
+        this.audioElement.pause();
+        this.audioElement.currentTime = 0;
+        console.log("Audio playback stopped");
+      }
+      
+      // Stop browser speech synthesis if active
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      
+      // Revoke the object URL to free up memory
+      if (this.currentAudioUrl) {
+        URL.revokeObjectURL(this.currentAudioUrl);
+      }
+      
+      this.currentAudioUrl = null;
+      this.isSpeaking = false;
+      this.renderPanel();
     }
   }
   

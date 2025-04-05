@@ -22,6 +22,7 @@ export interface N8nWebhookConfig {
   initialMessages?: Message[];
   showWelcomeScreen?: boolean;
   theme?: 'light' | 'dark' | 'system';
+  showAvatar?: boolean;
 }
 
 export interface TranscriptWord {
@@ -61,6 +62,7 @@ export interface WidgetProps {
   ttsProvider?: 'deepgram' | 'deepseek';
   initialMessages?: Message[];
   showWelcomeScreen?: boolean;
+  showAvatar?: boolean;
 }
 
 export interface VoiceRecorderProps {

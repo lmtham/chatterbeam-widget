@@ -1,15 +1,18 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Mic, X, MinusCircle } from 'lucide-react';
+import { Mic, X, MinusCircle, Maximize2, UserCircle } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 import { WidgetProps, Message, TranscriptResult } from '@/types';
 import VoiceRecorder from './VoiceRecorder';
 import ChatBox from './ChatBox';
 import TranscriptDisplay from './TranscriptDisplay';
+import Avatar from './Avatar';
 import useN8nWebhook from '@/hooks/useN8nWebhook';
 import useTTS from '@/hooks/useTTS';
 import { cn } from '@/lib/utils';
+import avatarService from '@/services/AvatarService';
 
 const VoiceWidget: React.FC<WidgetProps> = ({
   webhookUrl,
@@ -20,13 +23,16 @@ const VoiceWidget: React.FC<WidgetProps> = ({
   theme = 'system',
   mode = 'standard',
   initialMessages = [],
-  ttsProvider = 'deepgram'
+  ttsProvider = 'deepgram',
+  showAvatar = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [showingAvatar, setShowingAvatar] = useState(showAvatar);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [transcript, setTranscript] = useState<TranscriptResult | null>(null);
+  const [currentAIText, setCurrentAIText] = useState<string>('');
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   const isUserInterruptingRef = useRef<boolean>(false);
@@ -68,6 +74,7 @@ const VoiceWidget: React.FC<WidgetProps> = ({
       };
       
       setMessages([message]);
+      setCurrentAIText(greetingMessage);
       
       // Only generate speech if it's not already speaking
       if (!isSpeaking) {
@@ -105,6 +112,10 @@ const VoiceWidget: React.FC<WidgetProps> = ({
   const handleMinimize = () => {
     setIsMinimized(!isMinimized);
   };
+
+  const handleToggleAvatar = () => {
+    setShowingAvatar(!showingAvatar);
+  };
   
   const handleTranscriptReceived = async (result: TranscriptResult) => {
     // Update last time user spoke for debouncing purposes
@@ -117,6 +128,7 @@ const VoiceWidget: React.FC<WidgetProps> = ({
       console.log("User interrupting AI speech");
       stopSpeech(); // Immediately stop AI speech to let user speak
       isUserInterruptingRef.current = true;
+      setCurrentAIText(''); // Reset current AI text to stop avatar
       
       // Add a small delay before resetting the interruption state
       setTimeout(() => {
@@ -135,6 +147,7 @@ const VoiceWidget: React.FC<WidgetProps> = ({
       
       // Stop any ongoing speech immediately
       stopSpeech();
+      setCurrentAIText(''); // Reset current AI text to stop avatar
       
       // Add user message
       const userMessage: Message = {
@@ -169,6 +182,9 @@ const VoiceWidget: React.FC<WidgetProps> = ({
             : msg
           ));
           
+          // Set current AI text for avatar
+          setCurrentAIText(response);
+          
           // Only generate speech if user hasn't interrupted in the meantime
           const timeSinceLastUserSpeak = Date.now() - lastUserSpeakTimeRef.current;
           if (timeSinceLastUserSpeak > 500 && !isUserInterruptingRef.current) {
@@ -188,8 +204,15 @@ const VoiceWidget: React.FC<WidgetProps> = ({
           ? { ...msg, text: "Sorry, I couldn't process that request.", pending: false }
           : msg
         ));
+        
+        setCurrentAIText("Sorry, I couldn't process that request.");
       }
     }
+  };
+  
+  // Handle avatar video end event
+  const handleAvatarVideoEnd = () => {
+    setCurrentAIText('');
   };
   
   // Position classes based on the position prop
@@ -216,6 +239,14 @@ const VoiceWidget: React.FC<WidgetProps> = ({
             <h3 className="font-medium">Voice Assistant</h3>
             <div className="flex items-center gap-2">
               <button 
+                onClick={handleToggleAvatar}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label={showingAvatar ? "Hide Avatar" : "Show Avatar"}
+                title={showingAvatar ? "Hide Avatar" : "Show Avatar"}
+              >
+                <UserCircle size={18} />
+              </button>
+              <button 
                 onClick={handleMinimize}
                 className="text-muted-foreground hover:text-foreground transition-colors"
                 aria-label={isMinimized ? "Expand" : "Minimize"}
@@ -235,6 +266,17 @@ const VoiceWidget: React.FC<WidgetProps> = ({
           {/* Widget Content (hidden when minimized) */}
           {!isMinimized && (
             <>
+              {/* Avatar section - only show if enabled */}
+              {showingAvatar && (
+                <div className="p-4 border-b border-border">
+                  <Avatar 
+                    text={currentAIText} 
+                    isActive={Boolean(currentAIText)} 
+                    onVideoEnd={handleAvatarVideoEnd}
+                  />
+                </div>
+              )}
+            
               <ChatBox 
                 messages={messages} 
                 className="h-80"

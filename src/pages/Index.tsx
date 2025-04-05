@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Mic, Settings, Info } from 'lucide-react';
+import { Mic, Settings, UserCircle } from 'lucide-react';
 
 import { Message, TranscriptResult, N8nWebhookConfig } from '@/types';
 import VoiceRecorder from '@/components/VoiceRecorder';
@@ -32,7 +32,6 @@ const Index = () => {
   });
   
   useEffect(() => {
-    // Check if webhook config is already saved in localStorage
     const savedWebhookConfig = localStorage.getItem('n8nWebhookConfig');
     if (savedWebhookConfig) {
       try {
@@ -46,7 +45,6 @@ const Index = () => {
         setIsConfiguring(true);
       }
     } else {
-      // If no webhook URL is saved, show the configuration
       setIsConfiguring(true);
     }
   }, []);
@@ -59,7 +57,6 @@ const Index = () => {
       return;
     }
     
-    // Save to localStorage
     const webhookConfig: N8nWebhookConfig = {
       webhookUrl,
       apiKey,
@@ -71,7 +68,6 @@ const Index = () => {
     setIsConfiguring(false);
     toast.success('Webhook configuration saved successfully');
     
-    // Add welcome message
     const welcomeMessage: Message = {
       id: uuidv4(),
       text: 'Hello! I am your voice assistant. How may I help you today?',
@@ -87,7 +83,6 @@ const Index = () => {
     setTranscript(result);
     
     if (result.isFinal && result.text) {
-      // Add user message
       const userMessage: Message = {
         id: uuidv4(),
         text: result.text,
@@ -97,7 +92,6 @@ const Index = () => {
       
       setMessages(prev => [...prev, userMessage]);
       
-      // Add pending AI message
       const pendingAiMessage: Message = {
         id: uuidv4(),
         text: 'Thinking...',
@@ -109,18 +103,15 @@ const Index = () => {
       setMessages(prev => [...prev, pendingAiMessage]);
       
       try {
-        // Process with n8n webhook
         const response = await sendToN8n(result.text, messages);
         
         if (response) {
-          // Update with actual AI response
           setMessages(prev => prev.map(msg => 
             msg.id === pendingAiMessage.id
               ? { ...msg, text: response, pending: false }
               : msg
           ));
           
-          // Generate speech for AI response
           generateSpeech(response);
         } else {
           throw new Error('No response from n8n');
@@ -128,7 +119,6 @@ const Index = () => {
       } catch (error) {
         console.error('Error processing with n8n:', error);
         
-        // Update with error message
         setMessages(prev => prev.map(msg => 
           msg.id === pendingAiMessage.id
             ? { ...msg, text: "I'm sorry, I couldn't process that request. Please try again.", pending: false }
@@ -309,7 +299,7 @@ const Index = () => {
           <div className="md:col-span-5">
             <div className="glass-panel h-full">
               <div className="p-4 border-b border-border">
-                <h2 className="text-xl font-semibold">How to Use</h2>
+                <h2 className="text-xl font-semibold">Features</h2>
               </div>
               
               <div className="p-6 space-y-6">
@@ -322,6 +312,20 @@ const Index = () => {
                   </div>
                   <p className="text-sm text-muted-foreground pl-10">
                     Click the microphone button and speak clearly to interact with the voice assistant.
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                      <UserCircle size={16} className="text-primary" />
+                    </div>
+                    <h3 className="font-medium">
+                      <a href="/avatar" className="text-primary hover:underline">Interactive Avatar</a>
+                    </h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground pl-10">
+                    Try our new interactive avatar assistant with realistic facial expressions and lip-syncing!
                   </p>
                 </div>
                 
@@ -348,7 +352,8 @@ const Index = () => {
 <script>
   new VoiceWidget({
     webhookUrl: "${webhookUrl}",
-    position: "bottom-right"
+    position: "bottom-right",
+    showAvatar: true
   });
 </script>`}
                   </div>
