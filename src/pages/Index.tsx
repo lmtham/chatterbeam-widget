@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Mic, Settings, UserCircle } from 'lucide-react';
+import { Mic, Settings, UserCircle, Info } from 'lucide-react';
 
 import { Message, TranscriptResult, N8nWebhookConfig } from '@/types';
 import VoiceRecorder from '@/components/VoiceRecorder';
